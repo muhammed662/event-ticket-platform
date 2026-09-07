@@ -1,9 +1,12 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EventResponse(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
     id: int
     title: str
     venue: str
@@ -12,3 +15,4 @@ class EventResponse(BaseModel):
     price_aed: int = Field(gt=0)
     ticket_capacity: int = Field(gt=0)
     tickets_remaining: int = Field(ge=0)
+    
