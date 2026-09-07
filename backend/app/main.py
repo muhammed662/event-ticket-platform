@@ -1,13 +1,15 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import Base, SessionLocal, engine, get_database
-from app.models import Event
-from app.schemas import EventResponse
+from app.models import Booking, Event
+from app.schemas import BookingCreate, BookingResponse, EventResponse
 
 def future_date(days_from_now: int, hour: int) -> datetime:
     current_time = datetime.now(UTC)
@@ -90,5 +92,95 @@ def list_events(
     database: Session = Depends(get_database),
 ):
     query = select(Event).order_by(Event.starts_at)
+
+    return database.scalars(query).all()
+
+@app.post(
+    "/api/bookings",
+    response_model=BookingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_booking(
+    booking_data: BookingCreate,
+    database: Session = Depends(get_database),
+):
+    event = database.get(Event, booking_data.event_id)
+
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found",
+        )
+
+    current_time = datetime.now(UTC).replace(tzinfo=None)
+
+    if event.starts_at <= current_time:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This event has already started",
+        )
+
+    inventory_update = database.execute(
+        update(Event)
+        .where(
+            Event.id == booking_data.event_id,
+            Event.tickets_remaining >= booking_data.quantity,
+        )
+        .values(
+            tickets_remaining=(
+                Event.tickets_remaining - booking_data.quantity
+            )
+        )
+    )
+
+    if inventory_update.rowcount != 1:
+        database.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Not enough tickets available",
+        )
+
+    booking = Booking(
+        booking_reference=f"TKT-{uuid4().hex[:8].upper()}",
+        event_id=event.id,
+        customer_name=booking_data.customer_name,
+        customer_email=booking_data.customer_email,
+        quantity=booking_data.quantity,
+        total_aed=event.price_aed * booking_data.quantity,
+        status="confirmed",
+    )
+
+    database.add(booking)
+
+    try:
+        database.commit()
+        database.refresh(booking)
+    except SQLAlchemyError:
+        database.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The booking could not be completed",
+        )
+
+    return booking
+
+@app.get(
+    "/api/bookings",
+    response_model=list[BookingResponse],
+)
+def find_bookings(
+    email: str = Query(min_length=5, max_length=255),
+    database: Session = Depends(get_database),
+):
+    cleaned_email = email.strip().lower()
+
+    query = (
+        select(Booking)
+        .options(selectinload(Booking.event))
+        .where(Booking.customer_email == cleaned_email)
+        .order_by(Booking.created_at.desc())
+    )
 
     return database.scalars(query).all()
