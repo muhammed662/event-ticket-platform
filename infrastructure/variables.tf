@@ -15,3 +15,9 @@ variable "environment" {
   type        = string
   default     = "demo"
 }
+
+variable "ec2_instance_type" {
+  description = "EC2 instance type for the FastAPI backend"
+  type        = string
+  default     = "t3.micro"
+}
