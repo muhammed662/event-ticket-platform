@@ -1,0 +1,121 @@
+#!/bin/bash
+
+set -euo pipefail
+
+dnf install -y \
+  python3 \
+  python3-pip \
+  unzip \
+  jq
+
+
+id eventapp >/dev/null 2>&1 || \
+  useradd \
+    --system \
+    --home-dir /opt/event-ticket \
+    --shell /sbin/nologin \
+    eventapp
+
+
+install -d \
+  -o eventapp \
+  -g eventapp \
+  /opt/event-ticket
+
+
+aws s3api get-object \
+  --bucket "${artifact_bucket}" \
+  --key "${artifact_key}" \
+  /tmp/backend.zip
+
+
+unzip -o \
+  /tmp/backend.zip \
+  -d /opt/event-ticket
+
+
+python3 -m venv /opt/event-ticket/.venv
+
+/opt/event-ticket/.venv/bin/python \
+  -m pip install \
+  --upgrade pip
+
+/opt/event-ticket/.venv/bin/python \
+  -m pip install \
+  -r /opt/event-ticket/requirements.txt
+
+
+DB_SECRET_JSON="$(
+  aws secretsmanager get-secret-value \
+    --secret-id "${db_secret_arn}" \
+    --region "${aws_region}" \
+    --query SecretString \
+    --output text
+)"
+
+export DB_SECRET_JSON
+
+
+DATABASE_URL="$(
+  python3 - <<'PYTHON'
+import json
+import os
+from urllib.parse import quote
+
+secret = json.loads(os.environ["DB_SECRET_JSON"])
+
+username = quote(secret["username"], safe="")
+password = quote(secret["password"], safe="")
+
+host = "${db_host}"
+port = "${db_port}"
+database = "${db_name}"
+
+print(
+    f"postgresql+psycopg://"
+    f"{username}:{password}@"
+    f"{host}:{port}/{database}"
+)
+PYTHON
+)"
+
+unset DB_SECRET_JSON
+
+
+install -d \
+  -m 0750 \
+  /etc/event-ticket
+
+printf 'DATABASE_URL=%s\n' "$DATABASE_URL" \
+  > /etc/event-ticket/backend.env
+
+chmod 0600 /etc/event-ticket/backend.env
+
+
+cat > /etc/systemd/system/event-ticket.service <<'SERVICE'
+[Unit]
+Description=Event Ticket FastAPI Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eventapp
+Group=eventapp
+WorkingDirectory=/opt/event-ticket
+EnvironmentFile=/etc/event-ticket/backend.env
+ExecStart=/opt/event-ticket/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+
+chown -R eventapp:eventapp /opt/event-ticket
+
+systemctl daemon-reload
+systemctl enable --now event-ticket.service

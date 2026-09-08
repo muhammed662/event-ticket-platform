@@ -23,6 +23,7 @@ __pycache__/
 *.tfplan
 terraform.tfvars
 crash.log
+infrastructure/build/
 
 # VS Code local settings
 .vscode/
