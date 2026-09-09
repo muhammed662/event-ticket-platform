@@ -4,6 +4,12 @@ A full-stack event ticket booking demo deployed on AWS with Terraform. The proje
 
 > The live AWS environment is destroyed when not being demonstrated to avoid unnecessary charges. The application can be recreated from the Terraform configuration in this repository.
 
+## Video demo
+
+https://github.com/user-attachments/assets/1780d4ea-82f6-4923-8a58-f3136cfb604c
+
+The demonstration shows a ticket booking, CloudFront delivery, the managed PostgreSQL database, a healthy load balancer target, and the Terraform infrastructure.
+
 ## Architecture
 
 ```mermaid
