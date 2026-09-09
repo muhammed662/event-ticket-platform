@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -100,7 +100,7 @@ class Booking(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     event: Mapped[Event] = relationship()    

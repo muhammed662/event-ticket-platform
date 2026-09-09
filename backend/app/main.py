@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
@@ -13,7 +13,7 @@ from app.models import Booking, Event
 from app.schemas import BookingCreate, BookingResponse, EventResponse
 
 def future_date(days_from_now: int, hour: int) -> datetime:
-    current_time = datetime.now(UTC)
+    current_time = datetime.now(timezone.utc)
 
     return (
         current_time + timedelta(days=days_from_now)
@@ -122,7 +122,7 @@ def create_booking(
             detail="Event not found",
         )
 
-    current_time = datetime.now(UTC).replace(tzinfo=None)
+    current_time = datetime.now(timezone.utc).replace(tzinfo=None)
 
     if event.starts_at <= current_time:
         raise HTTPException(
